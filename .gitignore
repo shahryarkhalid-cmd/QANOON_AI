@@ -1,0 +1,18 @@
+.env
+*.sqlite
+*.sqlite3
+.env
+*.faiss
+*.pkl
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+.ipynb_checkpoints/
+# Database
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
