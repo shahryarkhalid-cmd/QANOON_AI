@@ -77,7 +77,7 @@ cross_encoder = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
 # Defining a RAG pipeline:
 def RAG(state : State):
     try:
-      vector_store = FAISS.load_local('Law' , embeddings , allow_dangerous_deserialization = True)
+      vector_store = FAISS.load_local('Law_Vector_Database' , embeddings , allow_dangerous_deserialization = True)
       print(f'The documents loaded')
     except Exception as e:
       print(f'We cannot load because \n {e}')
@@ -103,7 +103,7 @@ def RAG(state : State):
       chunks = splitter.split_documents(pdf_loader)
       print(f'Splitted number of chunks : {len(chunks)}\n')
       vector_store = FAISS.from_documents(chunks , embeddings)
-      vector_store.save_local('Law')
+      vector_store.save_local('Law_Vector_Database')
       print('Document is saved.............\n')
     retriever = vector_store.as_retriever(search_kwargs = {'k' : 3})
     result = retriever.invoke(state['query'])
