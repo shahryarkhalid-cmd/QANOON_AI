@@ -24,6 +24,8 @@ from langchain_community.tools.tavily_search import TavilySearchResults
 import requests
 from sentence_transformers import CrossEncoder
 from langgraph.prebuilt import tools_condition , ToolNode
+from langchain_huggingface import HuggingFaceEmbeddings
+from prompts import PLANNER_PROMPT , CHAT_NODE_PROMPT ,CHAT_QUERY_REWRITER_PROMPT , GENERATOR_PROMPT , WEBSEARCHING_PROMPT , QUERY_REWRITER_PROMPT , DOCUMENT_EVALUATOR_PROMPT
 load_dotenv()
 
 class Planner(BaseModel):
@@ -67,12 +69,6 @@ class State(TypedDict):
   chat_rewritten_query : str
   chat_generator : str
 
-
-import os
-from dotenv import load_dotenv
-load_dotenv()
-
-from langchain_huggingface import HuggingFaceEmbeddings
 embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 cross_encoder = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
 
@@ -145,54 +141,7 @@ def modified_explicit_output_parser(doc : str , model = type(BaseModel)):
 
 def planner(state:State):
   prompt = ChatPromptTemplate.from_messages([
-    ('system', """You are a smart planner for a Pakistan Law Assistant.
-
-Your ONLY job is to read the user query and decide where to route it.
-
-Route to "rag" when user asks about:
-1. LEGAL QUESTIONS
-   - Laws, acts, ordinances, sections, articles
-   - "what is the punishment for..."
-   - "what are my rights..."
-   - "is it legal to..."
-
-2. PAKISTAN SPECIFIC INFORMATION
-   - Constitution, Penal Code, Criminal Procedure
-   - Family Law, Property Law, Labor Law
-   - FIR, bail, arrest, divorce, inheritance, property
-
-3. FACTUAL QUESTIONS ABOUT PAKISTAN
-   - Government policies, legal procedures
-   - Rights, punishments, court procedures
-
-Route to "chat" when user:
-1. GREETS OR DOES SMALL TALK
-   - "hello", "hi", "how are you", "thank you"
-
-2. ASKS GENERAL QUESTIONS NOT RELATED TO PAKISTAN LAW
-   - "what is machine learning", "tell me a joke"
-   - "latest news", "current situation of..."
-
-3. CONVERSATIONAL FOLLOW UPS
-   - "can you explain that again", "what do you mean"
-
-EXAMPLES:
-Query: "what is the punishment for theft?"        → {{"decision": "rag"}}
-Query: "can police arrest me without warrant?"    → {{"decision": "rag"}}
-Query: "what are fundamental rights in Pakistan?" → {{"decision": "rag"}}
-Query: "talaq ka tariqa kya hai?"                 → {{"decision": "rag"}}
-Query: "hello how are you?"                       → {{"decision": "chat"}}
-Query: "what is artificial intelligence?"         → {{"decision": "chat"}}
-Query: "latest news about something"              → {{"decision": "chat"}}
-Query: "thank you for your help"                  → {{"decision": "chat"}}
-
-CRITICAL RULES:
-- Reply in JSON format ONLY
-- Output MUST be exactly like this: {{"decision": "chat"}} or {{"decision": "rag"}}
-- No explanation
-- No extra text
-- Nothing else outside JSON
-"""),
+    ('system', PLANNER_PROMPT),
     ('human', 'Query: {query}\n\nDecision:')
 ])
   model = ChatGroq(model = 'meta-llama/llama-4-scout-17b-16e-instruct')
@@ -212,19 +161,7 @@ CRITICAL RULES:
 # Document Evaluator:
 def document_evaluator(state:State):
   llm = ChatGroq(model = 'llama-3.1-8b-instant')
-  prompt = ChatPromptTemplate([('system' , """You are an evaluator.
-         You are given documents and a query.
-         Rate each document from 0-1 based on how relevant it is to the query.
-         Higher score means more relevant.
-         Reply ONLY in this JSON format, nothing else:
-         {{
-             "documents": [
-                 {{"id": "id_0", "rating": 0.8}},
-                 {{"id": "id_1", "rating": 0.3}},
-                 {{"id": "id_2", "rating": 0.6}}
-             ]
-         }}"""
-                                     ) , ('human' , '{document} , {query}')
+  prompt = ChatPromptTemplate([('system' , DOCUMENT_EVALUATOR_PROMPT) , ('human' , '{document} , {query}')
   ]
                               )
 
@@ -283,24 +220,7 @@ def sentence_stripping_2(state:State):
 # QUERY REWRITER:
 def query_rewriter(state:State):
   prompt = ChatPromptTemplate.from_messages([
-    ('system', """You are a legal query rewriting expert for Pakistan Law.
-
-   Your job is to rewrite a user's casual or vague question into a precise legal query
-   that will retrieve the most relevant information from a legal database.
-
-   Follow these rules when rewriting:
-
-   1. ADD legal terminology
-   2. ADD relevant law name if you know it
-   3. ADD specific section or article if possible
-   4. EXPAND vague queries with related legal terms
-   5. KEEP the original meaning never change intent
-   6. For Urdu or mixed queries convert to English legal terms
-
-
-  Reply ONLY with the rewritten query as plain text.
-  No explanation, no extra text, just the rewritten query.
-"""),
+    ('system', QUERY_REWRITER_PROMPT),
     ('human', 'Original Query: {query}\n\nRewritten Query:')
 ])
   model = ChatGroq(model = "groq/compound")
@@ -320,8 +240,7 @@ def Websearching(state:State):
 
   prompt = ChatPromptTemplate(
       [
-          ('system' , """You are a helpful AI assistant your job is to use the tool and search for the query answer You are given two things first one is the query
-          itself and the other context as a helping agent for helping to find the best match"""),('human' , '{query} , {context}')
+          ('system' , WEBSEARCHING_PROMPT),('human' , '{query} , {context}')
       ]
   )
   llm = ChatGroq(model = 'meta-llama/llama-4-scout-17b-16e-instruct')
@@ -336,29 +255,7 @@ def Websearching(state:State):
 # Generator:
 def generator(state:State):
   prompt = ChatPromptTemplate.from_messages([
-    ('system', """You are an expert AI assistant with access to both retrieved document context and live web search results.
-
-    Your job is to generate a precise, accurate, and well-structured answer based on the provided context.
-
-    Follow these strict rules:
-    1. Answer ONLY from the provided context, do not use your own knowledge
-    2. If retrieved context and web search context contradict each other, prefer the web search result as it is more recent
-    3. If the answer is not found in either context, respond with "I do not have enough information to answer this question"
-    4. Always structure your answer clearly with proper explanation
-    5. Do not hallucinate or make up any facts
-    6. Cite whether the answer came from retrieved documents or web search
-
-    Context Structure you will receive:
-    - Retrieved Context: information from the document knowledge base
-    - Web Search Context: information from live web search results
-
-    Reply in the following JSON format:
-    {{
-       "answer": "your detailed answer here",
-       "source": "retrieved / web_search / both",
-       "confidence": "high / medium / low"exp
-}} and donot use /n as telling second line keep in mind donot use backsplashes
-"""),
+    ('system', GENERATOR_PROMPT),
     ('human', """Retrieved Context: {retrieved_context}
 
 Web Search Context: {web_search_context}
@@ -419,22 +316,7 @@ def chat_router(state: State):
 # DEFINING A SIMPLE CHATTING :
 def chat_node(state:State):
   prompt = ChatPromptTemplate.from_messages([
-    ('system', """You are "Wakeel Sahab" — Pakistan's most charming AI legal assistant.
-
-You are professional, knowledgeable, and humorous. You balance professionalism with light Desi humor.
-Your tone is warm and friendly.
-
-Rules for interaction:
-1. Greet warmly with humor.
-2. Be helpful and clear.
-3. Add a witty remark or light joke where appropriate.
-4. Keep professionalism; avoid sarcastic or hurtful humor.
-5. Use Desi expressions like "yaar", "arre", "bilkul", "acha" occasionally.
-6. Never make fun of Pakistan's legal system disrespectfully.
-7. NEVER give legal advice. For legal questions, say: "Arre yaar that sounds like a serious legal matter! Let me look that up properly for you in my legal database!"
-8. Keep responses concise and witty.
-9. Always end with an invitation to ask more.
-"""),
+    ('system',CHAT_NODE_PROMPT),
     ('human', '{query}')
 ])
   model = ChatGroq(model = "meta-llama/llama-4-scout-17b-16e-instruct")
@@ -472,15 +354,7 @@ def Chat_Websearching(state:State):
 def chat_query_rewriter(state:State):
       print("Entered in query rewriter\n")
       chat_rewriter_prompt = ChatPromptTemplate.from_messages([
-    ('system', """You are a search query optimization expert.
-     Rewrite user queries into effective web search queries.
-
-     Rules:
-     1. ADD specific keywords and year 2026
-     2. ADD location when relevant
-     3. ADD time context for events
-     CRITICAL: Reply with rewritten query ONLY. No explanation. Under 15 words.
-     """),
+    ('system', CHAT_QUERY_REWRITER_PROMPT),
     ('human', 'Original Query: {query}\n\nRewritten Search Query:')
 ])
       print("Before rewriting query")
