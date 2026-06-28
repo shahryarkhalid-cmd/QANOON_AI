@@ -9,19 +9,13 @@ from project import workflow
 
 app = FastAPI(title="QanoonAI", description="Pakistan Law Assistant")
 
-
-# ─── Request / Response Models ───────────────────────────────
 class QueryRequest(BaseModel):
     query: str
     thread_id: str
-
-
 class ThreadInfo(BaseModel):
     thread_id: str
     first_message: Optional[str] = ""
 
-
-# ─── DB Helper ───────────────────────────────────────────────
 DB_PATH = "CRAG.db"
 
 
@@ -98,15 +92,13 @@ def extract_answer(result: dict) -> str:
 
             else:
                 answer = str(gen)
-            print(f"✅ RAG answer: {answer[:100]}")
+            print(f" RAG answer: {answer[:100]}")
             return answer
 
     except Exception as e:
-        print(f"❌ Extract answer error: {e}")
+        print(f" Extract answer error: {e}")
         return f"Error extracting answer: {str(e)}"
 
-
-# ─── Routes ──────────────────────────────────────────────────
 @app.get("/")
 def root():
     return {"message": "QanoonAI is running!"}
