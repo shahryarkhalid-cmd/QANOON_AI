@@ -63,7 +63,7 @@ class State(TypedDict):
   ambiguous_incorrect : Optional[list[str]] 
   after_stripping_doc : list[str]
   web_search_result : str
-  generator : Generator
+  generator : str
   rewritten_query:str
   chat_web_search_result : str
   chat_rewritten_query : str
@@ -82,10 +82,10 @@ def RAG(state : State):
     except Exception as e:
       print(f'We cannot load because \n {e}')
       url =[
-          '\Documents\Pakistan_criminal_code.pdf',
-          '\Documents\Pakitan_panel_code.pdf',
-          '\Documents\Transfer_Property_Act.pdf',
-          '\Documents\constitution_of_1973.pdf',
+          '\\Pdf_documents\\Pakistan_criminal_code.pdf',
+          '\\Pdf_documents\\Pakitan_panel_code.pdf',
+          '\\Pdf_documents\\Transfer_Property_Act.pdf',
+          '\\Pdf_documents\\constitution_of_1973.pdf',
       ]
       pdf_loader = []
       for i in range (len(url)):
@@ -270,7 +270,7 @@ Answer:""")
   result = chain.invoke({'retrieved_context' : '\n\n'.join(state['after_stripping_doc']) , 'web_search_context' : state['web_search_result'] , 'query' : state['query']})
   final_result = explicit_output_parser(result.content , Generator)
   print('Final output is generated \n')
-  return {'generator' : final_result , 'messages'  : [AIMessage(content = final_result)]}
+  return {'generator': str(final_result.answer), 'messages': [AIMessage(content=final_result.answer)]}
 # Router
 def planner_router(state:State):
   if state['planner_decision']['decision'] == 'chat':
@@ -315,23 +315,22 @@ def chat_router(state: State):
 
 # DEFINING A SIMPLE CHATTING :
 def chat_node(state:State):
+  messages = state['messages'] if state['messages'] else []
   prompt = ChatPromptTemplate.from_messages([
-    ('system',CHAT_NODE_PROMPT),
-    ('human', '{query}')
-])
+        ('system', CHAT_NODE_PROMPT),
+        ('placeholder', '{messages}'),
+        ('human', '{query}')
+    ])
   model = ChatGroq(model = "meta-llama/llama-4-scout-17b-16e-instruct")
   chain = prompt | model | StrOutputParser()
-  result = chain.invoke({'query' : state['query']})
+  result = chain.invoke({'messages': messages ,'query' : state['query']})
   generator = result
   message = AIMessage(content = result)
   print(f'💬 Chat done: {result[:100]}\n')
 
   return {
         'messages': [
-            HumanMessage(content=state['query']),
-            AIMessage(content=result)
-        ],
-        'chat_generator': result                     }
+            HumanMessage(content=state['query']),AIMessage(content=result)],'chat_generator': result}
 # CHAIN_WEBSEARCHING
 search_tool = TavilySearchResults(max_results=5 , name="tavily_search_results_json")
 def Chat_Websearching(state:State):
@@ -397,36 +396,5 @@ connection = sqlite3.connect('CRAG.db' , check_same_thread=False)
 checkpointer = SqliteSaver(connection)
 workflow = graph.compile(checkpointer = checkpointer)
 
-
-
-
-
-config = {'configurable' : {'thread_id' : '3'}}
-while True:
-    user_input = input('user:')
-    quitting_statements = ['bye' , 'quit' , 'exit']
-    if user_input in quitting_statements:
-        print("Thanks for chatting")
-        break
-    result = workflow.invoke({
-    'query' : user_input,
-    'raw_docs' : [],
-    'document_scores' : [],
-    'router' : '',
-    'planner_decision' : {},
-    'allowed_docs' : [],
-    'ambiguous_docs' : [],
-    'incorrect_docs' : [],
-    'strip_doc' : [],
-    'ambiguous_incorrect' : [],
-    'after_stripping_doc' : [],
-    'web_search_result' : '',
-    'generator' : {},
-    'rewritten_query' : ''
-} , config = config)
-    if result['planner_decision']['decision'] == 'chat':
-        print(f'AI : {result['messages'][-1].content}')
-    else:
-        print(f'AI: {result['generator'].answer}' )
 
 
